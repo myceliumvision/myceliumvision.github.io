@@ -1,0 +1,34 @@
+# The "Request access" form (the website's and the program's button open it). The person's GitHub account is what
+# gets access; .github/workflows/access.yml answers it.
+name: Request access to Mycelium
+description: Ask for access to download Mycelium and get its updates.
+title: "Access request"
+labels: ["access request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The GitHub account you're signed in with now is the one that gets access - nothing else is needed.
+        Once it's approved you get an invitation by email: accept it, then download Mycelium at https://myceliumvision.github.io.
+        This page is public: only write what anyone may read.
+  - type: input
+    id: name
+    attributes:
+      label: Your name
+      description: So we know who is asking.
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Where you'll use it
+      description: E.g. your company, university or lab.
+    validations:
+      required: false
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Passing it on
+      options:
+        - label: I won't pass the installer on - others can ask for access here themselves.
+          required: true

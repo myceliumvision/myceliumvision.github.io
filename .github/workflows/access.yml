@@ -1,0 +1,74 @@
+# Access requests (asked for on 30 October 2026). Someone asks with the "Request access" form - an issue here, opened
+# with their own GitHub account. Whoever has access already is told so at once (or, invited, to accept the
+# invitation). Otherwise the request waits until the owner adds the label "approved": then the person who opened
+# it - never a name written in it - is added to the team that can read the releases, and GitHub emails them an
+# invitation if they aren't in the organization yet. Only those who may manage the repository can add labels.
+#
+# The token comes from the GitHub App "Mycelium access" (Organization permissions > Members: Read and write),
+# installed on the organization: its Client ID is the variable ACCESS_APP_CLIENT_ID, its private key the secret
+# ACCESS_APP_PRIVATE_KEY. The team's slug is the variable ACCESS_TEAM (default mycelium-user, the team "Mycelium user").
+name: Access requests
+
+on:
+  issues:
+    types: [opened, labeled]
+
+permissions:
+  issues: write
+
+concurrency:
+  group: access-${{ github.event.issue.number }}
+
+jobs:
+  access:
+    if: >-
+      startsWith(github.event.issue.title, 'Access request') &&
+      (github.event.action == 'opened' || github.event.label.name == 'approved')
+    runs-on: ubuntu-latest
+    env:
+      ORG: ${{ github.repository_owner }}
+      TEAM: ${{ vars.ACCESS_TEAM || 'mycelium-user' }}
+      SITE: https://${{ github.repository_owner }}.github.io
+      PERSON: ${{ github.event.issue.user.login }}
+      NUMBER: ${{ github.event.issue.number }}
+      ACTION: ${{ github.event.action }}
+    steps:
+      - uses: actions/create-github-app-token@v3
+        id: app
+        with:
+          client-id: ${{ vars.ACCESS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ACCESS_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Has access already - or add them once approved
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          # active: in the team; pending: invited, not accepted yet; none: neither
+          if ! state=$(gh api "orgs/$ORG/teams/$TEAM/memberships/$PERSON" --jq .state 2>/dev/null); then
+            state=none
+          fi
+          if [ "$ACTION" = "labeled" ] && [ "$state" = "none" ]; then
+            state=$(gh api -X PUT "orgs/$ORG/teams/$TEAM/memberships/$PERSON" -f role=member --jq .state)
+          fi
+          echo "STATE=$state" >> "$GITHUB_ENV"
+
+      - name: Tell them
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          case "$STATE" in
+            active)
+              text="You have access. Download Mycelium at $SITE (signed in to GitHub), install it, and click **Sign in with GitHub** at the top of the program - it then shows each new version by itself."
+              close=yes ;;
+            pending)
+              text="An invitation has been sent to you: accept it from your email or at https://github.com/orgs/$ORG/invitation - then download Mycelium at $SITE (signed in to GitHub)."
+              close=yes ;;
+            *)
+              text="Thanks - your request is waiting to be approved. Once it is, you get an invitation by email."
+              close=no ;;
+          esac
+          gh issue comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body "$text"
+          if [ "$close" = yes ]; then
+            gh issue close "$NUMBER" --repo "$GITHUB_REPOSITORY" --reason completed
+          fi
